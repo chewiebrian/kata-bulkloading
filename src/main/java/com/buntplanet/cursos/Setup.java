@@ -1,19 +1,14 @@
 package com.buntplanet.cursos;
 
-import java.io.UncheckedIOException;
-import java.net.URISyntaxException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
-
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.*;
 
 class Setup {
 
@@ -34,7 +29,7 @@ class Setup {
     dataSource.setJdbcUrl(JDBC_URL);
     dataSource.setUsername(JDBC_USER);
     dataSource.setPassword(JDBC_PASS);
-    dataSource.setTransactionIsolation("TRANSACTION_READ_COMMITTED");
+    dataSource.setTransactionIsolation("TRANSACTION_READ_UNCOMMITTED");
     dataSource.setConnectionTestQuery("SELECT 1");
     dataSource.setIdleTimeout(0);
     return dataSource;
@@ -70,15 +65,25 @@ class Setup {
     logger.info("Índices en tabla 'trips' creados");
   }
 
-   static Path getCSVPath() {
-     try {
-       return Paths.get(Setup.class.getResource("/2015-Q2-Trips-History-Data.csv").toURI());
-     } catch (URISyntaxException e) {
-       throw new RuntimeException(e);
-     }
-   }
+  static Path getCSVPath() {
+    try {
+      return Paths.get(Setup.class.getResource("/2015-Q2-Trips-History-Data.csv").toURI());
+    } catch (URISyntaxException e) {
+      throw new RuntimeException(e);
+    }
+  }
 
-   static long getCSVLineCount() {
+  static int getCSVLineCount() {
     return 999070;
-   }
+  }
+
+  static int getTripsTableLineCount() {
+    try (Connection conn = getSingleConnection();
+         Statement st = conn.createStatement();
+         ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM trips");) {
+      return rs.next() ? rs.getInt(1) : 0;
+    } catch (SQLException e) {
+      throw new RuntimeException(e);
+    }
+  }
 }
