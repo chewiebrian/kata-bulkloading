@@ -41,7 +41,7 @@ class Setup {
     }
   }
 
-  static void prepareDBNoIndexes(Connection conn) throws SQLException {
+  static void prepareDB(Connection conn) throws SQLException {
     executeSql(conn, "DROP TABLE IF EXISTS trips");
     logger.info("Tabla 'trips' borrada si existe");
     executeSql(conn, "" +
@@ -58,29 +58,15 @@ class Setup {
     logger.info("Tabla 'trips' creada");
   }
 
-  static void createIndexes(Connection conn) throws SQLException {
-    executeSql(conn, "CREATE INDEX trips_duration ON trips(duration_ms)");
-    executeSql(conn, "CREATE INDEX trips_start_time ON trips(start_time)");
-    executeSql(conn, "CREATE INDEX trips_end_time ON trips(end_time)");
-    logger.info("Índices en tabla 'trips' creados");
-  }
-
-  static Path getCSVPath() {
-    try {
-      return Paths.get(Setup.class.getResource("/2015-Q2-Trips-History-Data.csv").toURI());
-    } catch (URISyntaxException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  static int getCSVLineCount() {
-    return 999070;
-  }
-
+  /**
+   * Devuelve el número actual de filas en la tabla trips.
+   *
+   * @return
+   */
   static int getTripsTableLineCount() {
     try (Connection conn = getSingleConnection();
          Statement st = conn.createStatement();
-         ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM trips");) {
+         ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM trips")) {
       return rs.next() ? rs.getInt(1) : 0;
     } catch (SQLException e) {
       throw new RuntimeException(e);
