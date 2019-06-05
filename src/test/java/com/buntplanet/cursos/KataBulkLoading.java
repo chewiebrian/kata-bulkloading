@@ -1,34 +1,20 @@
 package com.buntplanet.cursos;
 
-import static com.buntplanet.cursos.LambdaUtils.retry;
-import static com.buntplanet.cursos.LambdaUtils.unchecked;
-import static com.buntplanet.cursos.Setup.*;
-import static java.util.stream.Collectors.joining;
-import static java.util.stream.Collectors.toList;
-import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.*;
-
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.*;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import org.apache.commons.collections4.ListUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
 
-import javax.sql.DataSource;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import static com.buntplanet.cursos.Setup.*;
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.*;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class KataBulkLoading {
@@ -84,17 +70,9 @@ public class KataBulkLoading {
    */
   @Test
   public void ej1_count_total_csv_lines() throws IOException {
-    final int csvLineCount = (int) Files.lines(getCSVPath()).skip(1).count();
+    final int csvLineCount = 0; //TODO: contar correctamente
 
     assertThat(csvLineCount, is(CSV_LINE_COUNT));
-  }
-
-  static Path getCSVPath() {
-    try {
-      return Paths.get(Setup.class.getResource(CSV_RESOURCE_NAME).toURI());
-    } catch (URISyntaxException e) {
-      throw new RuntimeException(e);
-    }
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -104,65 +82,16 @@ public class KataBulkLoading {
    * <p>
    * Habrá que transformar cada fila del CSV en una INSERT INTO trips VALUES ...
    * Como éste es el método más lento, procesar sólamente las 100000 primeras líneas.
-   *
+   * <p>
    * Hint: Stream.limit()
    *
    * @throws Exception
    */
   @Test
   public void ej2_insert_one_by_one() throws Exception {
-    //Se ve Stream.map()
-    //Extra: curryficacion, extraer funciones
-    //Soluciones con collect() o directamente con el stream.
-
-    try (final Connection conn = getSingleConnection()) {
-      insertValuesOneByOneCollecting(conn);
-
-      //menos consumo memoria, igual tiempo
-      //insertValuesOneByOneStreaming(conn);
-    }
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(100000));
-  }
-
-  private void insertValuesOneByOneCollecting(Connection conn) throws IOException {
-    final List<String> lines = Files.lines(getCSVPath()).skip(1).limit(100000).collect(toList());
-
-    lines.stream().map(this::mapCsvLineToInsertStatement)
-        .forEach(unchecked(sql -> executeSql(conn, sql)));
-  }
-
-  private void insertValuesOneByOneStreaming(Connection conn) throws IOException {
-    Files.lines(getCSVPath()).skip(1).limit(100000)
-        .map(this::mapCsvLineToInsertStatement)
-        .forEach(executeSqlWithConnection(conn));   //Ejemplo curryficacion
-  }
-
-  private void executeSql(Connection conn, String sql) throws SQLException {
-    try (Statement st = conn.createStatement()) {
-      st.execute(sql);
-    }
-  }
-
-  private Consumer<String> executeSqlWithConnection(Connection conn) {
-    return unchecked(sql -> executeSql(conn, sql));
-  }
-
-  String mapCsvLineToInsertStatement(String line) {
-    return "INSERT INTO trips VALUES " + mapCsvLineToInsertValues(line);
-  }
-
-  String mapCsvLineToInsertValues(String line) {
-    final String[] cols = line.replaceAll("'", "_").split(",");
-    return String.format(
-        "('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-        cols[0],
-        cols[1],
-        cols[2],
-        cols[3],
-        cols[4],
-        cols[5],
-        cols[6]);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -174,35 +103,14 @@ public class KataBulkLoading {
    * creando un batch de inserciones en vez de ir una a una y ejecutarlo una única vez al final (addBatch y executeBatch).
    * <p>
    * El rendimiento tiene que ser un poco mejor que en el ejercicio 2.
-   *
+   * <p>
    * Hint: Stream.onClose()
    *
    * @throws Exception
    */
   @Test
   public void ej3_insert_batch() throws Exception {
-    //se ve: Stream.onClose
-
-    try (final Connection conn = getSingleConnection();
-         PreparedStatement ps = conn.prepareStatement("INSERT INTO trips VALUES(?, ?, ?, ?, ?, ?, ?)");
-         Stream<String> lines = Files.lines(getCSVPath()).skip(1).limit(100000)
-    ) {
-      lines.onClose(unchecked(ps::executeBatch));
-
-      lines
-          .map(line -> line.split(","))
-          .forEach(unchecked(cols -> {
-            ps.setString(1, cols[0]);
-            ps.setString(2, cols[1]);
-            ps.setString(3, cols[2]);
-            ps.setString(4, cols[3]);
-            ps.setString(5, cols[4]);
-            ps.setString(6, cols[5]);
-            ps.setString(7, cols[6]);
-
-            ps.addBatch();
-          }));
-    }
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(100000));
   }
@@ -216,38 +124,16 @@ public class KataBulkLoading {
    * Ejercicio 4: insertar sólo las líneas del día 6/30/2015.
    * <p>
    * Consejo: no partir de la implementación de un ejercicio anterior.
-   *
+   * <p>
    * Hint: Stream.filter()
    *
    * @throws Exception
    */
   @Test
   public void ej4_insert_filtered() throws Exception {
-    //Se ve: Stream.filter()
-
-    try (final Connection conn = Setup.getSingleConnection()) {
-      final List<String> lines = Files.lines(getCSVPath()).skip(1).limit(100000).collect(toList());
-
-      lines.stream()
-          .map(line -> line.replaceAll("'", "_").split(","))
-          .filter(cols -> StringUtils.startsWithIgnoreCase(cols[1], TEST_DAY))
-          .map(cols -> "INSERT INTO trips VALUES " + mapCsvLineToInsertValues(cols))
-          .forEach(executeSqlWithConnection(conn));
-    }
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(TRIPS_ON_TEST_DAY));
-  }
-
-  String mapCsvLineToInsertValues(String[] cols) {
-    return String.format(
-        "('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-        cols[0],
-        cols[1],
-        cols[2],
-        cols[3],
-        cols[4],
-        cols[5],
-        cols[6]);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -265,16 +151,7 @@ public class KataBulkLoading {
    */
   @Test
   public void ej5_insert_multiple_values() throws Exception {
-    //Se ve: Collectors.join()
-
-    final String insertWithMultipleValues = Files.lines(getCSVPath())
-        .skip(1)
-        .map(this::mapCsvLineToInsertValues)
-        .collect(Collectors.joining(","));
-
-    try (Connection conn = getSingleConnection()) {
-      executeSql(conn, "INSERT INTO trips VALUES " + insertWithMultipleValues);
-    }
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(CSV_LINE_COUNT));
   }
@@ -288,20 +165,7 @@ public class KataBulkLoading {
    */
   @Test
   public void ej6_insert_values_parallel() throws Exception {
-    final DataSource ds = Setup.getDataSource();
-
-    Files.lines(getCSVPath())
-        .skip(1)
-        .limit(100000)
-        .parallel()
-        .map(this::mapCsvLineToInsertStatement)
-        .forEach(
-            retry(3, sql -> {
-              try (final Connection conn = ds.getConnection()) {
-                executeSql(conn, sql);
-              }
-            })
-        );
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(100000));
   }
@@ -322,46 +186,9 @@ public class KataBulkLoading {
    */
   @Test
   public void ej7_insert_multiple_values_parallel() throws IOException {
-    //Se ve: parallel streams + crear streams a pelo
-    DataSource ds = getDataSource();
-
-    Stream<List<String>> chunks = buildChunkStream();
-
-    AtomicInteger chunkCount = new AtomicInteger();
-    chunks.parallel()
-        .map(chunk -> "INSERT INTO trips VALUES " + chunk.stream().map(this::mapCsvLineToInsertValues).collect(joining(",")))
-        .forEach(
-            sql -> {
-              System.out.println("chunk " + chunkCount.getAndIncrement() + " (hilo " + Thread.currentThread().getName() + ")");
-
-              try (Connection conn = ds.getConnection()) {
-                executeSql(conn, sql);
-              } catch (SQLException e) {
-                throw new RuntimeException(e);
-              }
-            }
-        );
+    //TODO: implementar
 
     assertThat(getTripsTableLineCount(), is(CSV_LINE_COUNT));
   }
-
-  private Stream<List<String>> buildChunkStream() throws IOException {
-    List<String> csvLines = Files.lines(getCSVPath()).skip(1).collect(toList());
-    List<List<String>> partitions = ListUtils.partition(csvLines, CHUNK_SIZE);
-
-    /*
-    Otra forma:
-    final AtomicInteger counter = new AtomicInteger();
-
-    Map<Object, List<String>> csvLines = Files.lines(Setup.getCSVPath()).skip(1).collect(
-        Collectors.groupingBy( it -> counter.getAndIncrement() / CHUNK_SIZE)
-    );
-     */
-
-    Stream.Builder<List<String>> builder = Stream.builder();
-    partitions.forEach(builder::add);
-    return builder.build();
-  }
-
 
 }
