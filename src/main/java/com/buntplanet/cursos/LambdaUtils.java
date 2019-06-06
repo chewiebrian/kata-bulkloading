@@ -1,10 +1,11 @@
 package com.buntplanet.cursos;
 
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class LambdaUtils {
 
-  static <T> Consumer<T> unchecked(CheckedConsumer<T> consumer) {
+  static <T> Consumer<T> uncheckedConsumer(CheckedConsumer<T> consumer) {
     return obj -> {
       try {
         consumer.accept(obj);
@@ -14,7 +15,7 @@ public class LambdaUtils {
     };
   }
 
-  static Runnable unchecked(CheckedRunnable runnable) {
+  static Runnable uncheckedRunnable(CheckedRunnable runnable) {
     return () -> {
       try {
         runnable.run();
@@ -24,24 +25,18 @@ public class LambdaUtils {
     };
   }
 
-  static <T> Consumer<T> retry(int numTimes, CheckedConsumer<T> consumer) {
-    return obj -> {
-      int times = numTimes;
-
-      while (times-- >= 0) {
-        try {
-          consumer.accept(obj);
-          return;
-        } catch (Throwable e) {
-          System.out.println("Retrying due to: " + e.toString());
-          //ignore
-        }
+  static <T> Supplier<T> uncheckedSupplier(CheckedSupplier<T> supplier) {
+    return () -> {
+      try {
+        return supplier.get();
+      } catch (Throwable throwable) {
+        throw new RuntimeException();
       }
     };
   }
 
   @FunctionalInterface
-  public interface CheckedConsumer<T>  {
+  public interface CheckedConsumer<T> {
     void accept(T t) throws Throwable;
   }
 
@@ -49,4 +44,10 @@ public class LambdaUtils {
   public interface CheckedRunnable {
     void run() throws Throwable;
   }
+
+  @FunctionalInterface
+  public interface CheckedSupplier<T> {
+    T get() throws Throwable;
+  }
+
 }
