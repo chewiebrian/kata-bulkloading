@@ -1,7 +1,6 @@
 package com.buntplanet.cursos;
 
 import org.apache.commons.collections4.ListUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.*;
 import org.junit.rules.TestName;
 import org.junit.runners.MethodSorters;
@@ -12,6 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -191,34 +193,35 @@ public class KataBulkLoading {
   }
 
   /////////////////////////////////////////////////////////////////////////////
-
-  private static final String TEST_DAY = "6/30/2015";
-  private static final int TRIPS_ON_TEST_DAY = 11970;
+  private static final LocalDate TEST_DAY = LocalDate.of(2015,6,28);
+  private static final int TRIPS_ON_EJ4 = 24161;
 
   /**
-   * Ejercicio 4: insertar sólo las líneas del día 6/30/2015.
+   * Ejercicio 4: insertar sólo las líneas posteriores al día 6/28/2015.
    * <p>
    * Consejo: no partir de la implementación de un ejercicio anterior.
    * <p>
    * Hint: Stream.filter()
+   * Hint: https://docs.oracle.com/javase/8/docs/api/java/time/LocalDateTime.html#parse-java.lang.CharSequence-java.time.format.DateTimeFormatter-
    *
    * @throws Exception
    */
   @Test
   public void ej4_insert_filtered() throws Exception {
-    //Se ve: Stream.filter()
+    //Se ve: Stream.filter(), API dates
+    final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/d/yyyy H:m");
 
     try (final Connection conn = DB.createConnection()) {
       final List<String> lines = Files.lines(getCSVPath()).skip(1).collect(toList());
 
       lines.stream()
           .map(line -> line.replaceAll("'", "_").split(","))
-          .filter(cols -> StringUtils.startsWithIgnoreCase(cols[1], TEST_DAY))
+          .filter(cols -> LocalDateTime.parse(cols[1], formatter).toLocalDate().isAfter(TEST_DAY))
           .map(cols -> "INSERT INTO trips VALUES " + mapCsvLineToInsertValues(cols))
           .forEach(executeSqlWithConnection(conn));
     }
 
-    assertThat(DB.getTripsTableLineCount(), is(TRIPS_ON_TEST_DAY));
+    assertThat(DB.getTripsTableLineCount(), is(TRIPS_ON_EJ4));
   }
 
   String mapCsvLineToInsertValues(String[] cols) {
