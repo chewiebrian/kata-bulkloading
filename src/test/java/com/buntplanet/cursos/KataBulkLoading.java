@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.LocalDate;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
@@ -119,15 +120,16 @@ public class KataBulkLoading {
 
   /////////////////////////////////////////////////////////////////////////////
 
-  private static final String TEST_DAY = "6/30/2015";
-  private static final int TRIPS_ON_TEST_DAY = 11970;
+  private static final LocalDate TEST_DAY = LocalDate.of(2015,6,28);
+  private static final int TRIPS_ON_EJ4 = 24161;
 
   /**
-   * Ejercicio 4: insertar sólo las líneas del día 6/30/2015.
+   * Ejercicio 4: insertar sólo las líneas posteriores al día 6/28/2015.
    * <p>
    * Consejo: no partir de la implementación de un ejercicio anterior.
    * <p>
    * Hint: Stream.filter()
+   * Hint: https://docs.oracle.com/javase/8/docs/api/java/time/LocalDateTime.html#parse-java.lang.CharSequence-java.time.format.DateTimeFormatter-
    *
    * @throws Exception
    */
@@ -135,7 +137,7 @@ public class KataBulkLoading {
   public void ej4_insert_filtered() throws Exception {
     //TODO: implementar
 
-    assertThat(DB.getTripsTableLineCount(), is(TRIPS_ON_TEST_DAY));
+    assertThat(DB.getTripsTableLineCount(), is(TRIPS_ON_EJ4));
   }
 
   /////////////////////////////////////////////////////////////////////////////
