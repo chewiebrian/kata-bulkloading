@@ -143,11 +143,9 @@ public class KataBulkLoading {
   /////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Ejercicio 5: en vez de hacer una INSERT por fila, hacer una INSERT con múltiples valores. Trabajar con todo el CSV.
+   * Ejercicio 5: en vez de hacer una INSERT por fila, hacer una INSERT con múltiples valores. Sólo las 10000 primeras filas.
    * <p>
    * Es decir INSERT INTO trips VALUES (...),(...),  ...
-   * <p>
-   * Usar el CSV completo.
    * <p>
    * Hint: usar Collectors.xxx() (https://docs.oracle.com/javase/8/docs/api/java/util/stream/Collectors.html)
    *
@@ -157,7 +155,7 @@ public class KataBulkLoading {
   public void ej5_insert_multiple_values() throws Exception {
     //TODO: implementar
 
-    assertThat(DB.getTripsTableLineCount(), is(CSV_LINE_COUNT));
+    assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
   }
 
   /////////////////////////////////////////////////////////////////////////////
