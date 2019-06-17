@@ -1,16 +1,30 @@
 package com.buntplanet.cursos;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.sql.*;
 
 class DB {
 
   private static final String JDBC_URL = "jdbc:sqlite:bulkloading.db";
+  private static final String JDBC_URL_LINUX = "jdbc:sqlite:/dev/shm/bulkloading.db";
   private static final String JDBC_USER = "bunt";
   private static final String JDBC_PASS = "bunt";
 
 
   static Connection createConnection() throws SQLException {
-    return DriverManager.getConnection(JDBC_URL, JDBC_USER, JDBC_PASS);
+    final Connection conn;
+
+    // en sistemas Linux la carpeta /dev/shm es un tmpfs alojado en RAM
+    if (Files.isDirectory(Paths.get("/", "dev", "shm")))
+      conn = DriverManager.getConnection(JDBC_URL_LINUX, JDBC_USER, JDBC_PASS);
+    else
+      conn = DriverManager.getConnection(JDBC_URL, JDBC_USER, JDBC_PASS);
+
+    // desactivamos los fsync tras cada sql para acelerar los test (ojo, no nos importa la integridad)
+    executeSql(conn, "PRAGMA synchronous=OFF");
+
+    return conn;
   }
 
   static void executeSql(Connection conn, String sql) throws SQLException {
