@@ -1,16 +1,29 @@
 package com.buntplanet.cursos;
 
+import org.apache.commons.collections4.Closure;
+import org.apache.commons.collections4.IteratorUtils;
+import org.apache.commons.collections4.Predicate;
+import org.apache.commons.collections4.Transformer;
+import org.apache.commons.collections4.iterators.BoundedIterator;
+import org.apache.commons.collections4.iterators.SkippingIterator;
+import org.apache.commons.io.FileUtils;
+import org.joda.time.LocalDate;
+import org.joda.time.LocalDateTime;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.DateTimeFormatterBuilder;
 import org.junit.*;
 import org.junit.rules.TestName;
 import org.junit.runners.MethodSorters;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.time.LocalDate;
+import java.util.Iterator;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
@@ -61,7 +74,12 @@ public class KataBulkLoading {
    */
   @Test
   public void ej1_count_total_csv_lines() throws IOException {
-    final int csvLineCount = 0; //TODO: implementar
+    final int csvLineCount;
+
+    try (CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+      csvLineCount = IteratorUtils.size(linesWithoutHeader);
+    }
 
     assertThat(csvLineCount, is(CSV_LINE_COUNT));
   }
@@ -72,6 +90,10 @@ public class KataBulkLoading {
     } catch (URISyntaxException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  static File getCSVFile() {
+    return new File(DB.class.getResource(CSV_RESOURCE_NAME).getFile());
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -90,7 +112,37 @@ public class KataBulkLoading {
   public void ej2_insert_one_by_one() throws Exception {
     final String sql = "INSERT INTO trips VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s')";
 
-    //TODO: implementar
+    try (Connection conn = DB.createConnection();
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+      final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
+
+      final Iterator columnas = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, new Transformer<String, String[]>() {
+        @Override
+        public String[] transform(String linea) {
+          return linea.replaceAll("'", "_").split(",");
+        }
+      });
+
+      final Iterator sqlInserts = IteratorUtils.transformedIterator(columnas, new Transformer<String[], String>() {
+        @Override
+        public String transform(String[] columnas) {
+          return String.format(sql, columnas);
+        }
+      });
+
+      IteratorUtils.forEach(sqlInserts, new Closure<String>() {
+        @Override
+        public void execute(String sqlInsert) {
+          try {
+            DB.executeSql(conn, sqlInsert);
+          } catch (SQLException e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+
+    }
 
     assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
   }
@@ -113,14 +165,56 @@ public class KataBulkLoading {
   public void ej3_insert_batch() throws Exception {
     final String sql = "INSERT INTO trips VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-    //TODO: implementar
+    try (Connection conn = DB.createConnection();
+         PreparedStatement ps = conn.prepareStatement(sql);
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+      final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
+
+      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, new Transformer<String, String[]>() {
+        @Override
+        public String[] transform(String linea) {
+          return linea.replaceAll("'", "_").split(",");
+        }
+      });
+
+      for (String[] cols : IteratorUtils.asIterable(lineColumns)
+      ) {
+        try {
+          ps.setString(1, cols[0]);
+          ps.setString(2, cols[1]);
+          ps.setString(3, cols[2]);
+          ps.setString(4, cols[3]);
+          ps.setString(5, cols[4]);
+          ps.setString(6, cols[5]);
+          ps.setString(7, cols[6]);
+
+          ps.addBatch();
+        } catch (SQLException e) {
+          throw new RuntimeException(e);
+        }
+      }
+
+/*
+      //Alternativa:
+      IteratorUtils.forEach(lineColumns, new Closure<String[]>() {
+        @Override
+        public void execute(String[] cols) {
+          ...
+        }
+      });
+*/
+
+      ps.executeBatch();
+    }
 
     assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
   }
 
   /////////////////////////////////////////////////////////////////////////////
 
-  private static final LocalDate TEST_DAY = LocalDate.of(2015,6,28);
+  private static final LocalDate TEST_DAY = new LocalDate(2015, 6, 28);
   private static final int TRIPS_ON_EJ4 = 24161;
 
   /**
@@ -136,6 +230,49 @@ public class KataBulkLoading {
   @Test
   public void ej4_insert_filtered() throws Exception {
     //TODO: implementar
+    final String sql = "INSERT INTO trips VALUES (?, ?, ?, ?, ?, ?, ?)";
+    final DateTimeFormatter dateTimeFormatter = new DateTimeFormatterBuilder().appendPattern("M/d/yyyy H:m").toFormatter();
+
+    try (Connection conn = DB.createConnection();
+         PreparedStatement ps = conn.prepareStatement(sql);
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+
+      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(linesWithoutHeader, new Transformer<String, String[]>() {
+        @Override
+        public String[] transform(String linea) {
+          return linea.replaceAll("'", "_").split(",");
+        }
+      });
+
+      final Iterator<String[]> filteredLines = IteratorUtils.filteredIterator(lineColumns, new Predicate<String[]>() {
+        @Override
+        public boolean evaluate(String[] cols) {
+          final LocalDateTime dateTime = LocalDateTime.parse(cols[1], dateTimeFormatter);
+          return dateTime.toLocalDate().isAfter(TEST_DAY);
+        }
+      });
+
+      for (String[] cols : IteratorUtils.asIterable(filteredLines)
+      ) {
+        try {
+          ps.setString(1, cols[0]);
+          ps.setString(2, cols[1]);
+          ps.setString(3, cols[2]);
+          ps.setString(4, cols[3]);
+          ps.setString(5, cols[4]);
+          ps.setString(6, cols[5]);
+          ps.setString(7, cols[6]);
+
+          ps.addBatch();
+        } catch (SQLException e) {
+          throw new RuntimeException(e);
+        }
+      }
+
+      ps.executeBatch();
+    }
 
     assertThat(DB.getTripsTableLineCount(), is(TRIPS_ON_EJ4));
   }
