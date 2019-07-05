@@ -1,5 +1,7 @@
 package com.buntplanet.cursos;
 
+import com.google.common.collect.Iterators;
+import com.google.common.collect.UnmodifiableIterator;
 import org.apache.commons.collections4.Closure;
 import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.collections4.Predicate;
@@ -7,6 +9,7 @@ import org.apache.commons.collections4.Transformer;
 import org.apache.commons.collections4.iterators.BoundedIterator;
 import org.apache.commons.collections4.iterators.SkippingIterator;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.joda.time.LocalDate;
 import org.joda.time.LocalDateTime;
 import org.joda.time.format.DateTimeFormatter;
@@ -24,6 +27,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.*;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
@@ -114,37 +119,46 @@ public class KataBulkLoading {
 
     try (Connection conn = DB.createConnection();
          CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+
       final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
       final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
+      final Iterator<String[]> allLinesColumns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, splitLineIntoColumns);
+      final Iterator<String> sqlInserts = IteratorUtils.transformedIterator(allLinesColumns, formatColumnsInto(sql));
 
-      final Iterator columnas = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, new Transformer<String, String[]>() {
-        @Override
-        public String[] transform(String linea) {
-          return linea.replaceAll("'", "_").split(",");
-        }
-      });
-
-      final Iterator sqlInserts = IteratorUtils.transformedIterator(columnas, new Transformer<String[], String>() {
-        @Override
-        public String transform(String[] columnas) {
-          return String.format(sql, columnas);
-        }
-      });
-
-      IteratorUtils.forEach(sqlInserts, new Closure<String>() {
-        @Override
-        public void execute(String sqlInsert) {
-          try {
-            DB.executeSql(conn, sqlInsert);
-          } catch (SQLException e) {
-            throw new RuntimeException(e);
-          }
-        }
-      });
-
+      IteratorUtils.forEach(sqlInserts, executeSqlWith(conn));
     }
 
     assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
+  }
+
+  private static final Transformer<String, String[]> splitLineIntoColumns = new Transformer<String, String[]>() {
+    @Override
+    public String[] transform(String linea) {
+      return linea.replaceAll("'", "_").split(",");
+    }
+  };
+
+  private static Transformer<String[], String> formatColumnsInto(final String sql) {
+    return new Transformer<String[], String>() {
+      @Override
+      public String transform(final String[] columnas) {
+        return String.format(sql, columnas);
+      }
+    };
+  }
+
+  private static Closure<String> executeSqlWith(final Connection conn) {
+    return new Closure<String>() {
+      @Override
+      public void execute(String sqlInsert) {
+        try {
+          DB.executeSql(conn, sqlInsert);
+        } catch (SQLException e) {
+          e.printStackTrace();
+          throw new RuntimeException(e);
+        }
+      }
+    };
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -171,13 +185,7 @@ public class KataBulkLoading {
 
       final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
       final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
-
-      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, new Transformer<String, String[]>() {
-        @Override
-        public String[] transform(String linea) {
-          return linea.replaceAll("'", "_").split(",");
-        }
-      });
+      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, splitLineIntoColumns);
 
       for (String[] cols : IteratorUtils.asIterable(lineColumns)
       ) {
@@ -195,16 +203,6 @@ public class KataBulkLoading {
           throw new RuntimeException(e);
         }
       }
-
-/*
-      //Alternativa:
-      IteratorUtils.forEach(lineColumns, new Closure<String[]>() {
-        @Override
-        public void execute(String[] cols) {
-          ...
-        }
-      });
-*/
 
       ps.executeBatch();
     }
@@ -238,14 +236,7 @@ public class KataBulkLoading {
          CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
 
       final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
-
-      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(linesWithoutHeader, new Transformer<String, String[]>() {
-        @Override
-        public String[] transform(String linea) {
-          return linea.replaceAll("'", "_").split(",");
-        }
-      });
-
+      final Iterator<String[]> lineColumns = IteratorUtils.transformedIterator(linesWithoutHeader, splitLineIntoColumns);
       final Iterator<String[]> filteredLines = IteratorUtils.filteredIterator(lineColumns, new Predicate<String[]>() {
         @Override
         public boolean evaluate(String[] cols) {
@@ -290,7 +281,21 @@ public class KataBulkLoading {
    */
   @Test
   public void ej5_insert_multiple_values() throws Exception {
-    //TODO: implementar
+    final String sqlPrefix = "INSERT INTO trips VALUES ";
+    final String sqlValues = "('%s', '%s', '%s', '%s', '%s', '%s', '%s')";
+
+    try (Connection conn = DB.createConnection();
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+      final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
+      final Iterator columns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, splitLineIntoColumns);
+      final Iterator allSqlValues = IteratorUtils.transformedIterator(columns, formatColumnsInto(sqlValues));
+
+      final String sql = sqlPrefix + StringUtils.join(IteratorUtils.toList(allSqlValues), ",");
+
+      executeSqlWith(conn).execute(sql);
+    }
+
 
     assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
   }
@@ -304,9 +309,41 @@ public class KataBulkLoading {
    */
   @Test
   public void ej6_insert_values_parallel() throws Exception {
-    //TODO: implementar
+    final String sql = "INSERT INTO trips VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s')";
+
+    try (final Connection conn = DB.createConnection();
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+
+      final ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 1);
+
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+      final BoundedIterator tenThousandLinesWithoutHeader = IteratorUtils.boundedIterator(linesWithoutHeader, TEN_THOUSAND);
+      final Iterator<String[]> allLinesColumns = IteratorUtils.transformedIterator(tenThousandLinesWithoutHeader, splitLineIntoColumns);
+      final Iterator<String> sqlInserts = IteratorUtils.transformedIterator(allLinesColumns, formatColumnsInto(sql));
+
+      IteratorUtils.forEach(sqlInserts, new Closure<String>() {
+        @Override
+        public void execute(final String sqlInsert) {
+          pool.submit(executeSqlWith(conn, sqlInsert));
+        }
+      });
+
+      //ojo: hay que esperar a que terminen todas las tareas encoladas en el pool
+      //lógicamente tenemos que mantener la conexión a BD abierta mientras queden tareas pendientes
+      pool.shutdown();
+      pool.awaitTermination(1, TimeUnit.MINUTES);
+    }
 
     assertThat(DB.getTripsTableLineCount(), is(TEN_THOUSAND));
+  }
+
+  Runnable executeSqlWith(final Connection conn, final String sql) {
+    return new Runnable() {
+      @Override
+      public void run() {
+        executeSqlWith(conn).execute(sql);
+      }
+    };
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -324,7 +361,42 @@ public class KataBulkLoading {
    */
   @Test
   public void ej7_insert_multiple_values_parallel() throws Exception {
-    //TODO: implementar
+    final String sqlPrefix = "INSERT INTO trips VALUES ";
+    final String sqlValues = "('%s', '%s', '%s', '%s', '%s', '%s', '%s')";
+
+    try (final Connection conn = DB.createConnection();
+         CloseableLineIterator allLines = new CloseableLineIterator(FileUtils.lineIterator(getCSVFile()))) {
+
+      final ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 1);
+
+      final SkippingIterator linesWithoutHeader = IteratorUtils.skippingIterator(allLines, 1);
+
+      //cuidado! Iterators es una clase de Guava, no de commons-collections
+      final UnmodifiableIterator<List<String>> partitions = Iterators.partition(linesWithoutHeader, CHUNK_SIZE);
+
+      final Iterator<String> sqlInserts = IteratorUtils.transformedIterator(partitions, new Transformer<List<String>, String>() {
+        @Override
+        public String transform(List<String> partition) {
+          final Iterator<String> allPartitionLines = partition.iterator();
+          final Iterator<String[]> allLinesColumns = IteratorUtils.transformedIterator(allPartitionLines, splitLineIntoColumns);
+          final Iterator<String> sqlInsertValues = IteratorUtils.transformedIterator(allLinesColumns, formatColumnsInto(sqlValues));
+
+          return sqlPrefix + StringUtils.join(IteratorUtils.toList(sqlInsertValues), ",");
+        }
+      });
+
+      IteratorUtils.forEach(sqlInserts, new Closure<String>() {
+        @Override
+        public void execute(final String sqlInsert) {
+          pool.submit(executeSqlWith(conn, sqlInsert));
+        }
+      });
+
+      //ojo: hay que esperar a que terminen todas las tareas encoladas en el pool
+      //lógicamente tenemos que mantener la conexión a BD abierta mientras queden tareas pendientes
+      pool.shutdown();
+      pool.awaitTermination(1, TimeUnit.MINUTES);
+    }
 
     assertThat(DB.getTripsTableLineCount(), is(CSV_LINE_COUNT));
   }
@@ -351,9 +423,31 @@ public class KataBulkLoading {
     //usaremos la implementación del ejercicio anterior para rellenar la tabla de viajes
     ej7_insert_multiple_values_parallel();
 
-    final int completeDuration = 0;  //TODO: implementar
+    final ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 1);
+
+    final int completeDuration;
+
+    try (Connection conn = DB.createConnection()) {
+      final Future<Integer> futureForDay1 = pool.submit(calculateDurationForDay(conn, TEST_DAY_1));
+      final Future<Integer> futureForDay2 = pool.submit(calculateDurationForDay(conn, TEST_DAY_2));
+      final Future<Integer> futureForDay3 = pool.submit(calculateDurationForDay(conn, TEST_DAY_3));
+
+      //ojo: no hacer los get() fuera del try-with-resources!
+      completeDuration = futureForDay1.get() + futureForDay2.get() + futureForDay3.get();
+    }
+
+    pool.shutdown();
 
     assertThat(completeDuration, is(TOTAL_DURATION_ON_TEST_DAYS_MINUTES));
+  }
+
+  Callable<Integer> calculateDurationForDay(final Connection conn, final String day) {
+    return new Callable<Integer>() {
+      @Override
+      public Integer call() throws Exception {
+        return DB.executeSqlScalar(conn, "SELECT sum(cast(duration_ms as numeric)) / 60000 FROM trips WHERE start_time like '" + day + "%'");
+      }
+    };
   }
 
 }
